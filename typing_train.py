@@ -6,13 +6,8 @@ from ebooklib import epub
 import ebooklib
 from bs4 import BeautifulSoup
 from colorama import init, Fore, Style
-import nltk
-from collections import Counter
-import jieba  # 导入jieba库
 
 init(autoreset=True)
-nltk.download('punkt')
-nltk.download('averaged_perceptron_tagger')
 
 
 def load_words_from_file(filename):
@@ -83,56 +78,28 @@ def split_sentences(text):
     return sentences
 
 
-def process_sentence(sentence, four_words=None, high_freq_words=None, practiced_words=None, word_freq=None):
+def process_sentence(sentence, four_words=None, high_freq_words=None, practiced_words=None):
     """改进版处理函数，支持中文和英文词汇处理"""
-    # 使用jieba进行中文分词
-    chinese_words = jieba.lcut(sentence)
-    tokens = []
-    index = 0
-    for word in chinese_words:
-        # 找到该词在原句中的位置
-        start_index = sentence.find(word, index)
-        suffix = sentence[start_index + len(word):]
-        if re.match(r'[\u4e00-\u9fff]+', word):  # 中文词
-            tokens.append((word, suffix))
-        else:  # 英文词或其他字符
-            english_words = re.findall(r'[a-zA-Z]+', word)
-            for eng_word in english_words:
-                eng_start_index = word.find(eng_word)
-                eng_suffix = word[eng_start_index + len(eng_word):]
-                tokens.append((eng_word, eng_suffix))
-            if not english_words:
-                tokens.append((word, suffix))
-        index = start_index + len(word)
-
+    # 识别中文和英文词汇
+    tokens = re.findall(r'([\u4e00-\u9fff]+|[a-zA-Z]+)([^\u4e00-\u9fff^a-zA-Z]*)', sentence)
     if not tokens:
         return None
 
-    # 词性分析
-    english_tokens = [core for core, _ in tokens if re.match(r'[a-zA-Z]+', core)]
-    pos_tags = nltk.pos_tag(english_tokens)
-
-    # 筛选词性
-    important_pos = ['NN', 'NNS', 'VB', 'VBD', 'VBG', 'VBN', 'VBP', 'VBZ']  # 名词和动词
-    important_indices = [i for i, (core, _) in enumerate(tokens) if re.match(r'[a-zA-Z]+', core) and pos_tags[english_tokens.index(core)][1] in important_pos]
-
-    # 第一优先级：属于四级词汇且非高频词且未练习过且是重要词性
-    if four_words and high_freq_words and practiced_words and word_freq:
+    # 第一优先级：属于四级词汇且非高频词且未练习过
+    if four_words and high_freq_words and practiced_words:
         primary_candidates = [
-            i for i in important_indices
-            if tokens[i][0] in four_words and tokens[i][0].lower() in {w.lower() for w in four_words}
-            and tokens[i][0].lower() not in high_freq_words and tokens[i][0].lower() not in practiced_words
-            and word_freq[tokens[i][0].lower()] < 5  # 低频词
+            i for i, (core, _) in enumerate(tokens)
+            if core in four_words and core.lower() in {w.lower() for w in four_words}
+            and core.lower() not in high_freq_words and core.lower() not in practiced_words
         ]
     else:
         primary_candidates = []
 
-    # 第二优先级：非高频词且未练习过且是重要词性（不论是否四级）
-    if high_freq_words and practiced_words and word_freq:
+    # 第二优先级：非高频词且未练习过（不论是否四级）
+    if high_freq_words and practiced_words:
         secondary_candidates = [
-            i for i in important_indices
-            if tokens[i][0].lower() not in high_freq_words and tokens[i][0].lower() not in practiced_words
-            and word_freq[tokens[i][0].lower()] < 5  # 低频词
+            i for i, (core, _) in enumerate(tokens)
+            if core.lower() not in high_freq_words and core.lower() not in practiced_words
         ]
     else:
         secondary_candidates = []
@@ -207,10 +174,6 @@ def main():
     except FileNotFoundError:
         pass
 
-    # 词频统计
-    all_words = ' '.join(sentences).split()
-    word_freq = Counter(all_words)
-
     # 加载上次练习的进度
     progress_file = f'{practice_text_file}.progress'
     start_index = load_progress(progress_file)
@@ -221,7 +184,7 @@ def main():
     # 处理每个句子
     while current_index < len(sentences):
         sent = sentences[current_index]
-        processed = process_sentence(sent, four_words, high_freq_words, practiced_words, word_freq)
+        processed = process_sentence(sent, four_words, high_freq_words, practiced_words)
         if not processed:
             current_index += 1
             continue
